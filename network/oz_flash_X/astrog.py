@@ -1,19 +1,78 @@
 #! /usr/bin/env python3
 
 
-Initial = True
+
+Ra26 = True
+
+### part data
+
+Out = open('./out/net_nz.dat', 'w')
+
+nuc_ntwk = []; a_ntwk = []; n_ntwk = []; z_ntwk = []
+with open('./in/part-v3.z897') as f:
+    for line in f:
+        dat = line.split()
+        if len(dat) == 6:
+            nuc_ntwk.append(dat[0])
+            a_ntwk.append(int(dat[1]))
+            n_ntwk.append(int(dat[2]))
+            z_ntwk.append(int(dat[3]))
+
+for j in range(len(nuc_ntwk)):
+    Out.write('{0:5}{1:5}{2:5}\n'.format(z_ntwk[j], n_ntwk[j], a_ntwk[j]))
 
 
 
-#with open('./in/rate-v3.z897c') as f:
-#    for line in f:
+#####  Rauscher 2026 ###################################3
+if Ra26:
 
+    ### p-induced
+    ra26_pg = []; ra26_pn = []; ra26_pa = []
+    with open('../../lib_data/ra26/fits_p.dat') as f:
+        i_cnt = 0
+        for line in f:
+            i_cnt += 1
+            if i_cnt % 3 == 1:
+                dat = line.split()
+                nuc_tmp = dat[0]
+                if   dat[2] == 'gam':
+                    rtype = 'pg'
+                elif dat[2] == 'n':
+                    rtype = 'pn'
+                elif dat[2] == 'he4':
+                    rtype = 'pa'
+                else:
+                    print(dat)
+                    exit('error: check fits_p')
+            elif i_cnt % 3 == 2:
+                if   rtype == 'pg':
+                    ra26_pg.append([nuc_tmp, line])
+                elif rtype == 'pn':
+                    ra26_pn.append([nuc_tmp, line])
+                elif rtype == 'pa':
+                    ra26_pa.append([nuc_tmp, line])
+            else:
+                if   rtype == 'pg':
+                    ra26_pg[-1].append(line)
+                elif rtype == 'pn':
+                    ra26_pn[-1].append(line)
+                elif rtype == 'pa':
+                    ra26_pa[-1].append(line)
+
+
+print(ra26_pn)
+
+exit()
+
+
+
+
+
+
+####
 
 with open('./in/rate-v3.z897c') as f:
     lines_in = [ line.rstrip("\n") for line in f ]
-
-
-
 
 i_line = 0
 reac_dat = []
