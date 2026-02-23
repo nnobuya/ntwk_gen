@@ -60,7 +60,78 @@ if Ra26:
                     ra26_pa[-1].append(line)
 
 
-print(ra26_pn)
+    ### n-induced
+    ra26_ng = []; ra26_np = []; ra26_na = []
+    with open('../../lib_data/ra26/fits_n.dat') as f:
+        i_cnt = 0
+        for line in f:
+            i_cnt += 1
+            if i_cnt % 3 == 1:
+                dat = line.split()
+                nuc_tmp = dat[0]
+                print(dat[1],dat[2])
+                if   dat[2] == 'gam':
+                    rtype = 'ng'
+                elif dat[2] == 'p':
+                    rtype = 'np'
+                elif dat[2] == 'he4':
+                    rtype = 'na'
+                else:
+                    print(dat)
+                    exit('error: check fits_n')
+            elif i_cnt % 3 == 2:
+                if   rtype == 'ng':
+                    ra26_ng.append([nuc_tmp, line])
+                elif rtype == 'np':
+                    ra26_np.append([nuc_tmp, line])
+                elif rtype == 'na':
+                    ra26_na.append([nuc_tmp, line])
+            else:
+                if   rtype == 'ng':
+                    ra26_ng[-1].append(line)
+                elif rtype == 'np':
+                    ra26_np[-1].append(line)
+                elif rtype == 'na':
+                    ra26_na[-1].append(line)
+
+
+    ### a-induced
+    ra26_ag = []; ra26_an = []; ra26_ap = []
+    with open('../../lib_data/ra26/fits_a.dat') as f:
+        i_cnt = 0
+        for line in f:
+            i_cnt += 1
+            if i_cnt % 3 == 1:
+                dat = line.split()
+                nuc_tmp = dat[0]
+                print(dat[1],dat[2])
+                if   dat[2] == 'gam':
+                    rtype = 'ag'
+                elif dat[2] == 'n':
+                    rtype = 'an'
+                elif dat[2] == 'p':
+                    rtype = 'ap'
+                else:
+                    print(dat)
+                    exit('error: check fits_a')
+            elif i_cnt % 3 == 2:
+                if   rtype == 'ag':
+                    ra26_ag.append([nuc_tmp, line])
+                elif rtype == 'an':
+                    ra26_an.append([nuc_tmp, line])
+                elif rtype == 'ap':
+                    ra26_ap.append([nuc_tmp, line])
+            else:
+                if   rtype == 'ag':
+                    ra26_ag[-1].append(line)
+                elif rtype == 'an':
+                    ra26_an[-1].append(line)
+                elif rtype == 'ap':
+                    ra26_ap[-1].append(line)
+
+
+
+
 
 exit()
 
