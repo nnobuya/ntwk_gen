@@ -2,8 +2,8 @@
 
 
 
-Ra26     = False
-Ra26_mod = False
+Ra26     = True
+Ra26_mod = True
 
 ### part data
 
@@ -85,7 +85,7 @@ if Ra26:
                 elif dat[2] == 'p':
                     rtype = 'np'
                 elif dat[2] == 'he4':
-                    rtype = 'na'
+                     rtype = 'na'
                 else:
                     print(dat)
                     exit('error: check fits_n')
@@ -262,20 +262,60 @@ if Ra26 and Ra26_mod:
 
     for itype in range(len(header)):
 
-#        print(header[itype], ireac)
-
         #Reverse = False
         Mod = True
-        if   header[itype][0] == 'ng':
+        if   header[itype][0] == 'pg':
+            rt_for = ra26_pg.copy()
+            rt_rev = []
+            i_nuc  = 1
+        if   header[itype][0] == 'gp':
+            rt_for = []
+            rt_rev = ra26_pg.copy()
+            i_nuc  = 0
+        elif header[itype][0] == 'pn':
+            rt_for = ra26_pn.copy()
+            rt_rev = []
+            i_nuc  = 1
+        elif header[itype][0] == 'np':
+            rt_for = ra26_np.copy()
+            rt_rev = []
+            i_nuc  = 1
+        elif header[itype][0] == 'pa':
+            rt_for = ra26_pa.copy()
+            rt_rev = []
+            i_nuc  = 1
+        elif header[itype][0] == 'ap':
+            rt_for = ra26_ap.copy()
+            rt_rev = []
+            i_nuc  = 1
+        elif header[itype][0] == 'ng':
             rt_for = ra26_ng.copy()
             rt_rev = []
+            i_nuc  = 1
         elif header[itype][0] == 'gn':
             rt_for = []
             rt_rev = ra26_ng.copy()
+            i_nuc  = 0
+        elif header[itype][0] == 'ag':
+            rt_for = ra26_ag.copy()
+            rt_rev = []
+            i_nuc  = 1
+        elif header[itype][0] == 'ga':
+            rt_for = []
+            rt_rev = ra26_ag.copy()
+            i_nuc  = 0
+        elif header[itype][0] == 'na':
+            rt_for = ra26_na.copy()
+            rt_rev = []
+            i_nuc  = 1
+        elif header[itype][0] == 'an':
+            rt_for = ra26_an.copy()
+            rt_rev = []
+            i_nuc  = 1
         else:
             ireac += header[itype][1]
             Mod = False
-            print('in prep.')
+            print(' - no modify', header[itype][0])
 
 
         if Mod:
@@ -287,28 +327,56 @@ if Ra26 and Ra26_mod:
                 ireac += 1
 
                 if   reac_dat[ireac][0] == 'iaa':
-                    print('iaa')
+                    #print('iaa')
                     continue
                 elif reac_dat[ireac][0] == 'reaclib':
 
-                    nuc0  = reac_dat[ireac][1][5:10].strip()
+                    if   i_nuc == 0:
+                        nuc0  = reac_dat[ireac][1][0:5].strip()
+                    elif i_nuc == 1:
+                        nuc0  = reac_dat[ireac][1][5:10].strip()
+                    else:
+                        exit('error: i_nuc')
+
                     nuc0  = nuc0.lower()
-                    label = reac_dat[ireac][1][41:45]
+                    label = reac_dat[ireac][1][41:45].strip()
 
                     Reverse = False
                     if reac_dat[ireac][1][39:40] == 'v':
                         Reverse = True
-                    
-                    for j in range(len(rt_for)):
-                        #print(nuc0, rt_for[j][0])
-                        if nuc0 == rt_for[j][0]:
-                            ### modify (prep.)
-                            reac_dat[ireac][1] = reac_dat[ireac][1][0:41] + 'ra26'
-                            #print('ok', label, Reverse)
+
+                    Mod_rate = False
+                    if label == 'rath' or label == 'ths8':
+                        Mod_rate = True
+
+                    if Mod_rate:
+                        #print(label)
+                        for j in range(len(rt_for)):
+                            if nuc0 == rt_for[j][0]:
+                                reac_dat[ireac][1]\
+                                    = reac_dat[ireac][1][0:41] + 'ra26'
+
+                                if reac_dat[ireac][4] != 0:
+                                    reac_dat[ireac][4] = 0
+                                    reac_dat[ireac][-1] = 'tmp'
+
+                                if Reverse:
+                                    if len(rt_rev) > 1:
+                                        a_tmp = rt_rev[j][3].lstrip()
+                                    else:
+                                        print('####### problem', reac_dat[ireac])
+                                else:
+                                    a_tmp = rt_for[j][2].lstrip()
+
+                                a_tmp = ' '.join(a_tmp.split())
+
+                                reac_dat[ireac][-1] = [a_tmp]
 
                 else:
                     print('error #2')
                     exit()
+
+
 
 #print(reac_dat[ireac])
 
@@ -320,7 +388,7 @@ if Ra26 and Ra26_mod:
 
 print(' ----- out new rate data -----')
 
-Out = open('./out/ntwk.dat', 'w')
+Out = open('./out/rate.dat', 'w')
 
 ireac = - 1
 
@@ -346,13 +414,12 @@ for itype in range(len(header)):
             Out.write('\n')
 
         elif reac_dat[ireac][0] == 'reaclib':
-            #print(reac_dat[ireac])
-#            Out.write(reac_dat[ireac][1] + '\n')
-#            Out.write(reac_dat[ireac][2] + '\n')
             qv = float(reac_dat[ireac][3])
             for j in range(1 + reac_dat[ireac][4]):
                 a_fit = reac_dat[ireac][5][j]
                 a_fit = a_fit.split(' ')
+
+                #print(a_fit)
                 Out.write(reac_dat[ireac][1] + '\n')
                 Out.write(reac_dat[ireac][2] + '\n')
 
