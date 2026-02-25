@@ -347,12 +347,15 @@ for itype in range(len(header)):
 
         elif reac_dat[ireac][0] == 'reaclib':
             #print(reac_dat[ireac])
-            Out.write(reac_dat[ireac][1] + '\n')
-            Out.write(reac_dat[ireac][2] + '\n')
+#            Out.write(reac_dat[ireac][1] + '\n')
+#            Out.write(reac_dat[ireac][2] + '\n')
             qv = float(reac_dat[ireac][3])
             for j in range(1 + reac_dat[ireac][4]):
                 a_fit = reac_dat[ireac][5][j]
                 a_fit = a_fit.split(' ')
+                Out.write(reac_dat[ireac][1] + '\n')
+                Out.write(reac_dat[ireac][2] + '\n')
+
                 Out.write('{0:13.5e}'.format(float(a_fit[0])))
                 Out.write('{0:13.5e}'.format(float(a_fit[1])))
                 Out.write('{0:13.5e}'.format(float(a_fit[2])))
@@ -369,7 +372,7 @@ for itype in range(len(header)):
 
 
 
-Out.write('  end   of data set                                \n\n')
+Out.write('  end   of data set\n')
 
 
 print(' ---------- finished ----------' + '\n')
