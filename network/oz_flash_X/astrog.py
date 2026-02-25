@@ -2,7 +2,8 @@
 
 
 
-Ra26 = True
+Ra26     = False
+Ra26_mod = False
 
 ### part data
 
@@ -21,20 +22,27 @@ with open('./in/part-v3.z897') as f:
 for j in range(len(nuc_ntwk)):
     Out.write('{0:5}{1:5}{2:5}\n'.format(z_ntwk[j], n_ntwk[j], a_ntwk[j]))
 
+Out.close()
+
+print('')
 
 
 #####  Rauscher 2026 ###################################3
 if Ra26:
+
+    print(' ----- read Rauscher 2026 data -----')
 
     ### p-induced
     ra26_pg = []; ra26_pn = []; ra26_pa = []
     with open('../../lib_data/ra26/fits_p.dat') as f:
         i_cnt = 0
         for line in f:
+            line = line.rstrip('\n')
             i_cnt += 1
             if i_cnt % 3 == 1:
                 dat = line.split()
-                nuc_tmp = dat[0]
+                nuc1 = dat[0]
+                nuc2 = dat[3]
                 if   dat[2] == 'gam':
                     rtype = 'pg'
                 elif dat[2] == 'n':
@@ -46,11 +54,11 @@ if Ra26:
                     exit('error: check fits_p')
             elif i_cnt % 3 == 2:
                 if   rtype == 'pg':
-                    ra26_pg.append([nuc_tmp, line])
+                    ra26_pg.append([nuc1, nuc2, line])
                 elif rtype == 'pn':
-                    ra26_pn.append([nuc_tmp, line])
+                    ra26_pn.append([nuc1, nuc2, line])
                 elif rtype == 'pa':
-                    ra26_pa.append([nuc_tmp, line])
+                    ra26_pa.append([nuc1, nuc2, line])
             else:
                 if   rtype == 'pg':
                     ra26_pg[-1].append(line)
@@ -65,11 +73,13 @@ if Ra26:
     with open('../../lib_data/ra26/fits_n.dat') as f:
         i_cnt = 0
         for line in f:
+            line = line.rstrip('\n')
             i_cnt += 1
             if i_cnt % 3 == 1:
                 dat = line.split()
-                nuc_tmp = dat[0]
-                print(dat[1],dat[2])
+                nuc1 = dat[0]
+                nuc2 = dat[3]
+                #print(dat[1],dat[2])
                 if   dat[2] == 'gam':
                     rtype = 'ng'
                 elif dat[2] == 'p':
@@ -81,11 +91,11 @@ if Ra26:
                     exit('error: check fits_n')
             elif i_cnt % 3 == 2:
                 if   rtype == 'ng':
-                    ra26_ng.append([nuc_tmp, line])
+                    ra26_ng.append([nuc1, nuc2, line])
                 elif rtype == 'np':
-                    ra26_np.append([nuc_tmp, line])
+                    ra26_np.append([nuc1, nuc2, line])
                 elif rtype == 'na':
-                    ra26_na.append([nuc_tmp, line])
+                    ra26_na.append([nuc1, nuc2, line])
             else:
                 if   rtype == 'ng':
                     ra26_ng[-1].append(line)
@@ -101,10 +111,12 @@ if Ra26:
         i_cnt = 0
         for line in f:
             i_cnt += 1
+            line = line.rstrip('\n')
             if i_cnt % 3 == 1:
                 dat = line.split()
-                nuc_tmp = dat[0]
-                print(dat[1],dat[2])
+                nuc1 = dat[0]
+                nuc2 = dat[3]
+                #print(dat[1],dat[2])
                 if   dat[2] == 'gam':
                     rtype = 'ag'
                 elif dat[2] == 'n':
@@ -116,11 +128,11 @@ if Ra26:
                     exit('error: check fits_a')
             elif i_cnt % 3 == 2:
                 if   rtype == 'ag':
-                    ra26_ag.append([nuc_tmp, line])
+                    ra26_ag.append([nuc1, nuc2, line])
                 elif rtype == 'an':
-                    ra26_an.append([nuc_tmp, line])
+                    ra26_an.append([nuc1, nuc2, line])
                 elif rtype == 'ap':
-                    ra26_ap.append([nuc_tmp, line])
+                    ra26_ap.append([nuc1, nuc2, line])
             else:
                 if   rtype == 'ag':
                     ra26_ag[-1].append(line)
@@ -129,18 +141,13 @@ if Ra26:
                 elif rtype == 'ap':
                     ra26_ap[-1].append(line)
 
+    print(' ---------- finished ----------' + '\n')
 
 
 
+####################################################
 
-exit()
-
-
-
-
-
-
-####
+print(' ----- read rate-v3.z897c data -----')
 
 with open('./in/rate-v3.z897c') as f:
     lines_in = [ line.rstrip("\n") for line in f ]
@@ -231,6 +238,7 @@ while( i_line < (len(lines_in) - 1) ):
 header[-1][1] = num_reac
 
 
+
 ###check
 
 if False:
@@ -242,10 +250,75 @@ if False:
         if reac_dat[j][0] == 'iaa' and True:
             print(reac_dat[j])
 
+print(' ---------- finished ----------' + '\n')
 
 
 
-### output
+
+if Ra26 and Ra26_mod:
+    ### find reaction rates included in Ra26
+
+    ireac = -1  ### counter for reac_dat[]
+
+    for itype in range(len(header)):
+
+#        print(header[itype], ireac)
+
+        #Reverse = False
+        Mod = True
+        if   header[itype][0] == 'ng':
+            rt_for = ra26_ng.copy()
+            rt_rev = []
+        elif header[itype][0] == 'gn':
+            rt_for = []
+            rt_rev = ra26_ng.copy()
+        else:
+            ireac += header[itype][1]
+            Mod = False
+            print('in prep.')
+
+
+        if Mod:
+
+            print('     - modifying: ' + header[itype][0])
+
+            for ireac_in in range(header[itype][1]):
+
+                ireac += 1
+
+                if   reac_dat[ireac][0] == 'iaa':
+                    print('iaa')
+                    continue
+                elif reac_dat[ireac][0] == 'reaclib':
+
+                    nuc0  = reac_dat[ireac][1][5:10].strip()
+                    nuc0  = nuc0.lower()
+                    label = reac_dat[ireac][1][41:45]
+
+                    Reverse = False
+                    if reac_dat[ireac][1][39:40] == 'v':
+                        Reverse = True
+                    
+                    for j in range(len(rt_for)):
+                        #print(nuc0, rt_for[j][0])
+                        if nuc0 == rt_for[j][0]:
+                            ### modify (prep.)
+                            reac_dat[ireac][1] = reac_dat[ireac][1][0:41] + 'ra26'
+                            #print('ok', label, Reverse)
+
+                else:
+                    print('error #2')
+                    exit()
+
+#print(reac_dat[ireac])
+
+
+#exit('in prep.')
+
+
+###### output ##################################################
+
+print(' ----- out new rate data -----')
 
 Out = open('./out/ntwk.dat', 'w')
 
@@ -299,7 +372,7 @@ for itype in range(len(header)):
 Out.write('  end   of data set                                \n\n')
 
 
-
+print(' ---------- finished ----------' + '\n')
 
 
 
