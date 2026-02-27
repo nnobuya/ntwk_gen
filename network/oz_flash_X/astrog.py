@@ -5,6 +5,9 @@
 Ra26     = True
 Ra26_mod = True
 
+Ra26_all = True
+#Ra26_all = False #only rath & ths8
+
 ### part data
 
 Out = open('./out/net_nz.dat', 'w')
@@ -346,7 +349,9 @@ if Ra26 and Ra26_mod:
                         Reverse = True
 
                     Mod_rate = False
-                    if label == 'rath' or label == 'ths8':
+                    if   Ra26_all:
+                        Mod_rate = True
+                    elif label == 'rath' or label == 'ths8':
                         Mod_rate = True
 
                     if Mod_rate:
