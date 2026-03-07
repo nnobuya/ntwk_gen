@@ -369,7 +369,7 @@ if Ra26 and Ra26_mod:
                                     if len(rt_rev) > 1:
                                         a_tmp = rt_rev[j][3].lstrip()
                                     else:
-                                        print('####### problem', reac_dat[ireac])
+                                        print('####### missing reverse', reac_dat[ireac][1])
                                 else:
                                     a_tmp = rt_for[j][2].lstrip()
 
