@@ -1,12 +1,18 @@
 #! /usr/bin/env python3
 
+import nuc_data as nd
 
 
-Ra26     = True
-Ra26_mod = True
+Rate_mod = True # switch ON/OFF rate modification;
+                # Original rates are outputted if Rate_mod = False.
 
-Ra26_all = True
-#Ra26_all = False #only rath & ths8
+
+#### Which reaction rates are updated by Ra26 (Rauscher 2026)?
+Ra26     = True # must be true
+
+Ra26_all = False # all the rates in Ra26
+
+n_selec = 0 # additional slection rule: 0:all 1:SnSbTe test
 
 ### part data
 
@@ -258,7 +264,7 @@ print(' ---------- finished ----------' + '\n')
 
 
 
-if Ra26 and Ra26_mod:
+if Ra26 and Rate_mod:
     ### find reaction rates included in Ra26
 
     ireac = -1  ### counter for reac_dat[]
@@ -352,7 +358,15 @@ if Ra26 and Ra26_mod:
                     if   Ra26_all:
                         Mod_rate = True
                     elif label == 'rath' or label == 'ths8':
-                        Mod_rate = True
+                        if   n_selec == 0:
+                            Mod_rate = True
+                        elif n_selec == 1:
+                            nuc_tmp = nd.iso_name(nuc0)
+                            if nuc_tmp[1] < 47 and nuc_tmp[2] < 53:
+                                Mod_rate = True
+                        else:
+                            print('under construction')
+                            exit()
 
                     if Mod_rate:
                         #print(label)
