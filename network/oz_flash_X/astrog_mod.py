@@ -12,7 +12,7 @@ Ra26     = True # must be true
 
 Ra26_all = False # all the rates in Ra26 (not only theory rates)
 
-n_selec = 4 # additional slection rules:
+n_selec = 0 # additional slection rules:
             #   0: all
             #   1: SnSbTe  test
             #   2: only pg (& gp)
