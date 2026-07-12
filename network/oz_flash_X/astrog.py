@@ -363,7 +363,7 @@ if Ra26 and Rate_mod:
                     Mod_rate = False
                     if   Ra26_all:
                         Mod_rate = True
-                    elif label == 'rath' or label == 'ths8':
+                    elif label in ('rath', 'ths8', 'rhra'):
                         if   n_selec == 0:
                             Mod_rate = True
                         elif n_selec == 1:
