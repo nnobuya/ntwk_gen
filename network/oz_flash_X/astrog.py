@@ -16,6 +16,8 @@ n_selec = 0 # additional slection rules:
             #   0: all
             #   1: SnSbTe  test
             #   2: only pg (& gp)
+            #   3: only alpha-induced reactions
+            #   4: only n-induced reactions
 
 
 ### part data
@@ -369,7 +371,13 @@ if Ra26 and Rate_mod:
                             if nuc_tmp[1] < 47 and nuc_tmp[2] < 53:
                                 Mod_rate = True
                         elif n_selec == 2:
-                            if header[itype][0] in ('pg','gp'):
+                            if header[itype][0] in ('pg', 'gp'):
+                                Mod_rate = True
+                        elif n_selec == 3:
+                            if header[itype][0] in ('ap', 'pa', 'ag', 'ga'):
+                                Mod_rate = True
+                        elif n_selec == 4:
+                            if header[itype][0] in ('ng', 'gn', 'np', 'pn'):
                                 Mod_rate = True
                         else:
                             print('under construction')
