@@ -12,7 +12,7 @@ Ra26     = True # must be true
 
 Ra26_all = False # all the rates in Ra26 (not only theory rates)
 
-n_selec = 0 # additional slection rules:
+n_selec = 4 # additional slection rules:
             #   0: all
             #   1: SnSbTe  test
             #   2: only pg (& gp)
@@ -273,142 +273,232 @@ print(' ---------- finished ----------' + '\n')
 if Ra26 and Rate_mod:
     ### find reaction rates included in Ra26
 
+    # Each Ra26 entry has the structure
+    #
+    #     [target_nucleus, product_nucleus, forward_fit, reverse_fit]
+    #
+    # For particle-exchange reactions, the desired rate may be stored either
+    # directly or as the reverse rate of a reaction in another input file.
+    #
+    # Each tuple below is:
+    #
+    #     (rate_list, nucleus_index, fit_index, match_type)
+    #
+    # A direct match compares nuc0 with entry[0] and uses entry[2].
+    # A reverse match compares nuc0 with entry[1] and uses entry[3].
+
+    reaction_search = {
+        # Radiative capture and photodisintegration
+        'pg': [
+            (ra26_pg, 0, 2, 'direct'),
+        ],
+        'gp': [
+            (ra26_pg, 1, 3, 'reverse'),
+        ],
+        'ng': [
+            (ra26_ng, 0, 2, 'direct'),
+        ],
+        'gn': [
+            (ra26_ng, 1, 3, 'reverse'),
+        ],
+        'ag': [
+            (ra26_ag, 0, 2, 'direct'),
+        ],
+        'ga': [
+            (ra26_ag, 1, 3, 'reverse'),
+        ],
+
+        # Particle-exchange reactions.
+        # Search the same direction first, then the reverse direction
+        # stored in the corresponding reaction list from another file.
+        'pn': [
+            (ra26_pn, 0, 2, 'direct'),
+            (ra26_np, 1, 3, 'reverse'),
+        ],
+        'np': [
+            (ra26_np, 0, 2, 'direct'),
+            (ra26_pn, 1, 3, 'reverse'),
+        ],
+        'pa': [
+            (ra26_pa, 0, 2, 'direct'),
+            (ra26_ap, 1, 3, 'reverse'),
+        ],
+        'ap': [
+            (ra26_ap, 0, 2, 'direct'),
+            (ra26_pa, 1, 3, 'reverse'),
+        ],
+        'na': [
+            (ra26_na, 0, 2, 'direct'),
+            (ra26_an, 1, 3, 'reverse'),
+        ],
+        'an': [
+            (ra26_an, 0, 2, 'direct'),
+            (ra26_na, 1, 3, 'reverse'),
+        ],
+    }
+
+    # Position of the target nucleus in the first line of each rate entry.
+    target_column = {
+        'pg': 1,
+        'gp': 0,
+        'ng': 1,
+        'gn': 0,
+        'ag': 1,
+        'ga': 0,
+        'pn': 1,
+        'np': 1,
+        'pa': 1,
+        'ap': 1,
+        'na': 1,
+        'an': 1,
+    }
+
     ireac = -1  ### counter for reac_dat[]
 
     for itype in range(len(header)):
 
-        #Reverse = False
-        Mod = True
-        if   header[itype][0] == 'pg':
-            rt_for = ra26_pg.copy()
-            rt_rev = []
-            i_nuc  = 1
-        elif   header[itype][0] == 'gp':
-            rt_for = ra26_pg.copy()
-            rt_rev = ra26_pg.copy()
-            i_nuc  = 0
-        elif header[itype][0] == 'pn':
-            rt_for = ra26_pn.copy()
-            rt_rev = []
-            i_nuc  = 1
-        elif header[itype][0] == 'np':
-            rt_for = ra26_np.copy()
-            rt_rev = []
-            i_nuc  = 1
-        elif header[itype][0] == 'pa':
-            rt_for = ra26_pa.copy()
-            rt_rev = []
-            i_nuc  = 1
-        elif header[itype][0] == 'ap':
-            rt_for = ra26_ap.copy()
-            rt_rev = []
-            i_nuc  = 1
-        elif header[itype][0] == 'ng':
-            rt_for = ra26_ng.copy()
-            rt_rev = []
-            i_nuc  = 1
-        elif header[itype][0] == 'gn':
-            rt_for = ra26_ng.copy()
-            rt_rev = ra26_ng.copy()
-            i_nuc  = 0
-        elif header[itype][0] == 'ag':
-            rt_for = ra26_ag.copy()
-            rt_rev = []
-            i_nuc  = 1
-        elif header[itype][0] == 'ga':
-            rt_for = ra26_ag.copy()
-            rt_rev = ra26_ag.copy()
-            i_nuc  = 0
-        elif header[itype][0] == 'na':
-            rt_for = ra26_na.copy()
-            rt_rev = []
-            i_nuc  = 1
-        elif header[itype][0] == 'an':
-            rt_for = ra26_an.copy()
-            rt_rev = []
-            i_nuc  = 1
-        else:
+        reaction_type = header[itype][0]
+
+        if reaction_type not in reaction_search:
             ireac += header[itype][1]
-            Mod = False
-            print(' - no modify', header[itype][0])
+            print(' - no modify', reaction_type)
+            continue
 
+        print('     - modifying: ' + reaction_type)
 
-        if Mod:
+        i_nuc = target_column[reaction_type]
+        search_candidates = reaction_search[reaction_type]
 
-            print('     - modifying: ' + header[itype][0])
+        count_theory = 0
+        count_direct = 0
+        count_reverse = 0
+        count_not_found = 0
+        count_missing_fit = 0
 
-            for ireac_in in range(header[itype][1]):
+        for ireac_in in range(header[itype][1]):
 
-                ireac += 1
+            ireac += 1
 
-                if   reac_dat[ireac][0] == 'iaa':
-                    #print('iaa')
-                    continue
-                elif reac_dat[ireac][0] == 'reaclib':
+            if reac_dat[ireac][0] == 'iaa':
+                continue
 
-                    if   i_nuc == 0:
-                        nuc0  = reac_dat[ireac][1][0:5].strip()
-                    elif i_nuc == 1:
-                        nuc0  = reac_dat[ireac][1][5:10].strip()
-                    else:
-                        exit('error: i_nuc')
+            if reac_dat[ireac][0] != 'reaclib':
+                print('error #2')
+                exit()
 
-                    nuc0  = nuc0.lower()
-                    label = reac_dat[ireac][1][41:45].strip()
+            if i_nuc == 0:
+                nuc0 = reac_dat[ireac][1][0:5].strip()
+            elif i_nuc == 1:
+                nuc0 = reac_dat[ireac][1][5:10].strip()
+            else:
+                exit('error: i_nuc')
 
-                    Reverse = False
-                    if reac_dat[ireac][1][39:40] == 'v':
-                        Reverse = True
+            nuc0 = nuc0.lower()
+            label = reac_dat[ireac][1][41:45].strip()
 
-                    Mod_rate = False
-                    if   Ra26_all:
+            Mod_rate = False
+
+            if Ra26_all:
+                Mod_rate = True
+
+            elif label in ('rath', 'ths8', 'thra'):
+
+                if n_selec == 0:
+                    Mod_rate = True
+
+                elif n_selec == 1:
+                    nuc_tmp = nd.iso_name(nuc0)
+                    if nuc_tmp[1] < 47 and nuc_tmp[2] < 53:
                         Mod_rate = True
-                    elif label in ('rath', 'ths8', 'thra'):
-                        if   n_selec == 0:
-                            Mod_rate = True
-                        elif n_selec == 1:
-                            nuc_tmp = nd.iso_name(nuc0)
-                            if nuc_tmp[1] < 47 and nuc_tmp[2] < 53:
-                                Mod_rate = True
-                        elif n_selec == 2:
-                            if header[itype][0] in ('pg', 'gp'):
-                                Mod_rate = True
-                        elif n_selec == 3:
-                            if header[itype][0] in ('ap', 'pa', 'ag', 'ga'):
-                                Mod_rate = True
-                        elif n_selec == 4:
-                            if header[itype][0] in ('ng', 'gn', 'np', 'pn'):
-                                Mod_rate = True
-                        else:
-                            print('under construction')
-                            exit()
 
-                    if Mod_rate:
-                        #print(label)
-                        for j in range(len(rt_for)):
-                            if nuc0 == rt_for[j][0]:
-                                reac_dat[ireac][1]\
-                                    = reac_dat[ireac][1][0:41] + 'ra26'
+                elif n_selec == 2:
+                    Mod_rate = reaction_type in ('pg', 'gp')
 
-                                if reac_dat[ireac][4] != 0:
-                                    reac_dat[ireac][4] = 0
-                                    reac_dat[ireac][-1] = 'tmp'
+                elif n_selec == 3:
+                    Mod_rate = reaction_type in (
+                        'ap', 'pa', 'ag', 'ga'
+                    )
 
-                                if Reverse:
-                                    if len(rt_rev) > 1:
-                                        a_tmp = rt_rev[j][3].lstrip()
-                                    else:
-                                        print('####### missing reverse', reac_dat[ireac][1])
-                                else:
-                                    a_tmp = rt_for[j][2].lstrip()
-
-                                a_tmp = ' '.join(a_tmp.split())
-
-                                reac_dat[ireac][-1] = [a_tmp]
+                elif n_selec == 4:
+                    Mod_rate = reaction_type in (
+                        'ng', 'gn', 'np', 'pn'
+                    )
 
                 else:
-                    print('error #2')
+                    print('under construction')
                     exit()
+
+            if not Mod_rate:
+                continue
+
+            count_theory += 1
+
+            found = False
+            a_tmp = None
+            match_type = None
+
+            for rate_list, nuc_index, fit_index, search_type \
+                    in search_candidates:
+
+                for rate_entry in rate_list:
+
+                    if nuc0 != rate_entry[nuc_index]:
+                        continue
+
+                    if len(rate_entry) <= fit_index:
+                        count_missing_fit += 1
+                        print(
+                            '####### missing fit:',
+                            reaction_type,
+                            nuc0,
+                            search_type
+                        )
+                        continue
+
+                    a_tmp = rate_entry[fit_index].lstrip()
+                    match_type = search_type
+                    found = True
+                    break
+
+                if found:
+                    break
+
+            if not found:
+                count_not_found += 1
+                print(
+                    '####### Ra26 rate not found:',
+                    reaction_type,
+                    nuc0,
+                    label
+                )
+                continue
+
+            if match_type == 'direct':
+                count_direct += 1
+            elif match_type == 'reverse':
+                count_reverse += 1
+            else:
+                exit('error: unknown Ra26 match type')
+
+            reac_dat[ireac][1] = \
+                reac_dat[ireac][1][0:41] + 'ra26'
+
+            # Remove additional resonance fits and retain only the Ra26 fit.
+            reac_dat[ireac][4] = 0
+
+            a_tmp = ' '.join(a_tmp.split())
+            reac_dat[ireac][-1] = [a_tmp]
+
+        print(
+            '       theory={0}, direct={1}, reverse={2}, '
+            'not found={3}, missing fit={4}'.format(
+                count_theory,
+                count_direct,
+                count_reverse,
+                count_not_found,
+                count_missing_fit
+            )
+        )
 
 
 
