@@ -10,9 +10,13 @@ Rate_mod = True # switch ON/OFF rate modification;
 #### Which reaction rates are updated by Ra26 (Rauscher 2026)?
 Ra26     = True # must be true
 
-Ra26_all = False # all the rates in Ra26
+Ra26_all = False # all the rates in Ra26 (not only theory rates)
 
-n_selec = 0 # additional slection rule: 0:all 1:SnSbTe test
+n_selec = 0 # additional slection rules:
+            #   0: all
+            #   1: SnSbTe  test
+            #   2: only pg (& gp)
+
 
 ### part data
 
@@ -277,7 +281,7 @@ if Ra26 and Rate_mod:
             rt_for = ra26_pg.copy()
             rt_rev = []
             i_nuc  = 1
-        if   header[itype][0] == 'gp':
+        elif   header[itype][0] == 'gp':
             rt_for = []
             rt_rev = ra26_pg.copy()
             i_nuc  = 0
@@ -363,6 +367,9 @@ if Ra26 and Rate_mod:
                         elif n_selec == 1:
                             nuc_tmp = nd.iso_name(nuc0)
                             if nuc_tmp[1] < 47 and nuc_tmp[2] < 53:
+                                Mod_rate = True
+                        elif n_selec == 2:
+                            if header[itype][0] in ('pg','gp'):
                                 Mod_rate = True
                         else:
                             print('under construction')
