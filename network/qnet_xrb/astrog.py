@@ -1,486 +1,364 @@
-#! /usr/bin/env python3
+#!/usr/bin/env python3
+"""Replace theoretical rates with SMARAGD fits in the existing XRB format.
 
-import nuc_data as nd
+Based on the direction-aware search in astrog_mod.py (ntwk_gen 8ddd698).
+SMARAGD's numeric Z,N fields, never its product-name field, identify reactions.
+Reverse fits omit partition functions: the XRB solver applies them when the
+last integer (indinv) is 1. Original Q values and partition data are retained.
+"""
+from __future__ import annotations
 
+import argparse
+import collections
+import csv
+import hashlib
+import io
+import json
+import math
+import re
+import sys
+from dataclasses import dataclass, field
+from pathlib import Path
 
-Rate_mod = True # switch ON/OFF rate modification;
-                # Original rates are outputted if Rate_mod = False.
+# Preserve the original user-editable defaults.
+Rate_mod = True
+Ra26 = True
+Ra26_all = False
+n_selec = 0
 
-
-#### Which reaction rates are updated by Ra26 (Rauscher 2026)?
-Ra26     = True # must be true
-
-Ra26_all = False # all the rates in Ra26 (not only theory rates)
-
-n_selec = 0 # additional slection rules:
-            #   0: all
-            #   1: SnSbTe  test
-            #   2: only pg (& gp)
-            #   3: only alpha-induced reactions
-            #   4: only n-induced reactions
-
-
-### part data
-
-Out = open('./out/net_nz.dat', 'w')
-
-nuc_ntwk = []; a_ntwk = []; n_ntwk = []; z_ntwk = []
-with open('./in/part-v3.z897') as f:
-    for line in f:
-        dat = line.split()
-        if len(dat) == 6:
-            nuc_ntwk.append(dat[0])
-            a_ntwk.append(int(dat[1]))
-            n_ntwk.append(int(dat[2]))
-            z_ntwk.append(int(dat[3]))
-
-for j in range(len(nuc_ntwk)):
-    Out.write('{0:5}{1:5}{2:5}\n'.format(z_ntwk[j], n_ntwk[j], a_ntwk[j]))
-
-Out.close()
-
-print('')
-
-
-#####  Rauscher 2026 ###################################3
-if Ra26:
-
-    print(' ----- read Rauscher 2026 data -----')
-
-    ### p-induced
-    ra26_pg = []; ra26_pn = []; ra26_pa = []
-    with open('../../lib_data/ra26/fits_p.dat') as f:
-        i_cnt = 0
-        for line in f:
-            line = line.rstrip('\n')
-            i_cnt += 1
-            if i_cnt % 3 == 1:
-                dat = line.split()
-                nuc1 = dat[0]
-                nuc2 = dat[3]
-                if   dat[2] == 'gam':
-                    rtype = 'pg'
-                elif dat[2] == 'n':
-                    rtype = 'pn'
-                elif dat[2] == 'he4':
-                    rtype = 'pa'
-                else:
-                    print(dat)
-                    exit('error: check fits_p')
-            elif i_cnt % 3 == 2:
-                if   rtype == 'pg':
-                    ra26_pg.append([nuc1, nuc2, line])
-                elif rtype == 'pn':
-                    ra26_pn.append([nuc1, nuc2, line])
-                elif rtype == 'pa':
-                    ra26_pa.append([nuc1, nuc2, line])
-            else:
-                if   rtype == 'pg':
-                    ra26_pg[-1].append(line)
-                elif rtype == 'pn':
-                    ra26_pn[-1].append(line)
-                elif rtype == 'pa':
-                    ra26_pa[-1].append(line)
+THEORY_LABELS = frozenset(('rath', 'ths8', 'thra'))
+PARTICLES = {'g': (0, 0), 'n': (0, 1), 'p': (1, 0), 'a': (2, 2)}
+CHANNELS = frozenset(('pg', 'gp', 'ng', 'gn', 'ag', 'ga',
+                      'pn', 'np', 'pa', 'ap', 'na', 'an'))
+MODE_CHANNELS = {2: {'pg', 'gp'}, 3: {'ap', 'pa', 'ag', 'ga'},
+                 4: {'ng', 'gn', 'np', 'pn'}}
+ELEMENTS = ('x h he li be b c n o f ne na mg al si p s cl ar k ca sc ti v cr mn fe co ni cu zn '
+            'ga ge as se br kr rb sr y zr nb mo tc ru rh pd ag cd in sn sb te i xe cs ba la ce '
+            'pr nd pm sm eu gd tb dy ho er tm yb lu hf ta w re os ir pt au hg tl pb bi po at '
+            'rn fr ra ac th pa u np pu am cm bk cf es fm md no lr rf db sg bh hs mt ds rg '
+            'cn nh fl mc lv ts og').split()
+ZN = tuple[int, int]
+Reaction = tuple[ZN, ZN, ZN, ZN]  # target, projectile, ejectile, product
 
 
-    ### n-induced
-    ra26_ng = []; ra26_np = []; ra26_na = []
-    with open('../../lib_data/ra26/fits_n.dat') as f:
-        i_cnt = 0
-        for line in f:
-            line = line.rstrip('\n')
-            i_cnt += 1
-            if i_cnt % 3 == 1:
-                dat = line.split()
-                nuc1 = dat[0]
-                nuc2 = dat[3]
-                #print(dat[1],dat[2])
-                if   dat[2] == 'gam':
-                    rtype = 'ng'
-                elif dat[2] == 'p':
-                    rtype = 'np'
-                elif dat[2] == 'he4':
-                     rtype = 'na'
-                else:
-                    print(dat)
-                    exit('error: check fits_n')
-            elif i_cnt % 3 == 2:
-                if   rtype == 'ng':
-                    ra26_ng.append([nuc1, nuc2, line])
-                elif rtype == 'np':
-                    ra26_np.append([nuc1, nuc2, line])
-                elif rtype == 'na':
-                    ra26_na.append([nuc1, nuc2, line])
-            else:
-                if   rtype == 'ng':
-                    ra26_ng[-1].append(line)
-                elif rtype == 'np':
-                    ra26_np[-1].append(line)
-                elif rtype == 'na':
-                    ra26_na[-1].append(line)
+class RateError(ValueError):
+    """An input or ambiguous match that must stop conversion before output."""
 
 
-    ### a-induced
-    ra26_ag = []; ra26_an = []; ra26_ap = []
-    with open('../../lib_data/ra26/fits_a.dat') as f:
-        i_cnt = 0
-        for line in f:
-            i_cnt += 1
-            line = line.rstrip('\n')
-            if i_cnt % 3 == 1:
-                dat = line.split()
-                nuc1 = dat[0]
-                nuc2 = dat[3]
-                #print(dat[1],dat[2])
-                if   dat[2] == 'gam':
-                    rtype = 'ag'
-                elif dat[2] == 'n':
-                    rtype = 'an'
-                elif dat[2] == 'p':
-                    rtype = 'ap'
-                else:
-                    print(dat)
-                    exit('error: check fits_a')
-            elif i_cnt % 3 == 2:
-                if   rtype == 'ag':
-                    ra26_ag.append([nuc1, nuc2, line])
-                elif rtype == 'an':
-                    ra26_an.append([nuc1, nuc2, line])
-                elif rtype == 'ap':
-                    ra26_ap.append([nuc1, nuc2, line])
-            else:
-                if   rtype == 'ag':
-                    ra26_ag[-1].append(line)
-                elif rtype == 'an':
-                    ra26_an[-1].append(line)
-                elif rtype == 'ap':
-                    ra26_ap[-1].append(line)
-
-    print(' ---------- finished ----------' + '\n')
+def require(condition, message):
+    if not condition:
+        raise RateError(message)
 
 
-
-####################################################
-
-print(' ----- read rate-v3.z897c data -----')
-
-with open('./in/rate-v3.z897c') as f:
-    lines_in = [ line.rstrip("\n") for line in f ]
-
-i_line = 0
-reac_dat = []
-header = []
-
-line0  = ''
-num_reac = 0
-Initial = True
-
-while( i_line < (len(lines_in) - 1) ):
-
-    line = lines_in[i_line]
-
-    dat = line.split()
-
-    #print(i_line)
-
-    if   dat[0]  == 'data':
-        ### new reaction type
-        if not Initial:
-            header[-1][1] = num_reac
-
-        header.append([dat[2], 0])
-
-        Initial = False
-
-        num_reac = 0
-        i_line += 1
-    elif dat[-1] == 'iaa':
-        ### iaa (brussel data table)
-        #print('iaa rate')
+def parse_name(name: str) -> ZN:
+    name = name.strip().lower()
+    special = {'gam': (0, 0), 'n': (0, 1), 'p': (1, 0), 'd': (1, 1), 't': (1, 2)}
+    if name in special:
+        return special[name]
+    match = re.fullmatch(r'([a-z]+)(\d+)', name)
+    require(match is not None and match[1] in ELEMENTS, f'Unknown nuclide: {name!r}')
+    z = ELEMENTS.index(match[1])
+    n = int(match[2]) - z
+    require(z > 0 and n >= 0, f'Invalid nuclide: {name!r}')
+    return z, n
 
 
-
-        table =      lines_in[i_line + 2] + ' ' + lines_in[i_line + 3] \
-            + ' '  + lines_in[i_line + 4] + ' ' + lines_in[i_line + 5]
-
-        reac_dat.append(['iaa', lines_in[i_line], lines_in[i_line + 1], \
-                         qv, 0, table])
-
-        num_reac += 1
-
-        i_line += 6
-    elif line == line0:
-        ### resonance reaction fitting
-        #print('resonance')
+def format_name(zn: ZN) -> str:
+    if zn == (0, 0):
+        return 'gam'
+    if zn == (0, 1):
+        return 'n'
+    return f'{ELEMENTS[zn[0]]}{sum(zn)}'
 
 
-        a_fit =     lines_in[i_line + 2].split()[0] \
-            + ' ' + lines_in[i_line + 2].split()[1] \
-            + ' ' + lines_in[i_line + 2].split()[2] \
-            + ' ' + lines_in[i_line + 2].split()[3] \
-            + ' ' + lines_in[i_line + 3].split()[0] \
-            + ' ' + lines_in[i_line + 3].split()[1] \
-            + ' ' + lines_in[i_line + 3].split()[2]
-
-        #print(reac_dat[-1])
-        reac_dat[-1][4] += 1
-        reac_dat[-1][5].append(a_fit)
-
-        #print(reac_dat[-1])
+def numbers(text: str, count: int, where: str) -> tuple[float, ...]:
+    try:
+        values = tuple(float(v.replace('D', 'E').replace('d', 'e')) for v in text.split())
+    except ValueError as exc:
+        raise RateError(f'{where}: invalid number') from exc
+    require(len(values) == count and all(math.isfinite(v) for v in values),
+            f'{where}: expected {count} finite numbers, got {len(values)}')
+    return values
 
 
-        i_line += 4
+@dataclass(frozen=True)
+class Nuclide:
+    name: str
+    a: int
+    zn: ZN
+    mass_excess: float
+
+
+def read_partition(path: Path) -> list[Nuclide]:
+    lines = path.read_text().splitlines()
+    count = int(lines[0])
+    require(len(lines) == 1 + 4*count, f'{path}: expected 4 lines per nuclide')
+    nuclides = []
+    for offset in range(1, len(lines), 4):
+        row = lines[offset].split()
+        require(len(row) == 6, f'{path}:{offset+1}: invalid nuclide row')
+        name, a, z, n = row[:4]
+        zn = int(z), int(n)
+        require(parse_name(name) == zn and int(a) == sum(zn),
+                f'{path}:{offset+1}: nuclide name, A, Z, N disagree')
+        pf = numbers(' '.join(lines[offset+1:offset+4]), 24, f'{path}:{offset+2}')
+        require(all(v > 0 for v in pf), f'{path}:{offset+2}: partition function must be positive')
+        nuclides.append(Nuclide(name, int(a), zn, float(row[5])))
+    require(len({n.zn for n in nuclides}) == count, f'{path}: duplicate nuclide')
+    return nuclides
+
+
+@dataclass
+class RateRecord:
+    section: str
+    line: int
+    header: str
+    ids: tuple[int, ...]
+    raw: list[str]
+    terms: list[tuple[float, ...]] = field(default_factory=list)
+    q: float | None = None
+    iaa: bool = False
+
+    @property
+    def label(self):
+        return self.header[40:45].strip()
+
+
+def read_rates(path: Path) -> list[str | RateRecord]:
+    # Retain raw bytes (including line endings) for every untouched record.
+    lines = path.read_bytes().decode('ascii').splitlines(keepends=True)
+    items, section, i, ended = [], None, 0, False
+    while i < len(lines):
+        line = lines[i].rstrip('\r\n')
+        words = line.split()
+        if not words or line.startswith('#'):
+            items.append(lines[i]); i += 1; continue
+        if words[:2] == ['end', 'of']:
+            items.extend(lines[i:]); ended = True; break
+        if words[:2] == ['data', 'of']:
+            section = words[2]
+            items.append(lines[i]); i += 1; continue
+        require(section is not None, f'{path}:{i+1}: rate outside reaction section')
+        iaa = line[40:45].strip() == 'iaa'
+        width = 6 if iaa else 4
+        require(i+width <= len(lines), f'{path}:{i+1}: incomplete rate block')
+        ids = tuple(map(int, lines[i+1].split()))
+        require(len(ids) == 8, f'{path}:{i+2}: expected 8 integers')
+        values = numbers(' '.join(lines[i+2:i+width]), 28 if iaa else 8, f'{path}:{i+3}')
+        record = RateRecord(section, i+1, line, ids, lines[i:i+width],
+                            [] if iaa else [values[:7]], None if iaa else values[7], iaa)
+        # Consecutive identical headers contain additional fits to one rate.
+        previous = items[-1] if items else None
+        if (not iaa and isinstance(previous, RateRecord) and not previous.iaa
+                and previous.section == section and previous.header == line and previous.ids == ids):
+            require(previous.q == record.q, f'{path}:{i+1}: Q differs between fit terms')
+            previous.raw.extend(record.raw)
+            previous.terms.extend(record.terms)
+        else:
+            items.append(record)
+        i += width
+    require(ended, f'{path}: missing end marker')
+    return items
+
+
+@dataclass(frozen=True)
+class Fit:
+    identity: Reaction
+    coefficients: tuple[float, ...]
+    direction: str
+    source: str
+    line: int
+    q: float  # Q for this oriented reaction
+    original_names: str
+
+
+def read_smaragd(directory: Path):
+    candidates, mismatches = {}, []
+    for projectile, particle in [('p', 'p'), ('n', 'n'), ('a', 'a')]:
+        path = directory/f'fits_{projectile}.dat'
+        lines = path.read_text().splitlines()
+        require(len(lines) % 3 == 0, f'{path}: incomplete 3-line fit entry')
+        for i in range(0, len(lines), 3):
+            row = lines[i].split()
+            require(len(row) == 15, f'{path}:{i+1}: expected 15 header fields')
+            key = tuple(tuple(map(int, row[j:j+2])) for j in (4, 6, 8, 10))
+            require(all(0 <= z < len(ELEMENTS) and n >= 0 for z, n in key),
+                    f'{path}:{i+1}: invalid numeric Z,N')
+            require(key[1] == PARTICLES[particle] and key[2] in PARTICLES.values(),
+                    f'{path}:{i+1}: wrong projectile or ejectile')
+            require(tuple(key[0][j]+key[1][j] for j in (0, 1)) ==
+                    tuple(key[2][j]+key[3][j] for j in (0, 1)),
+                    f'{path}:{i+1}: numeric Z,N are not conserved')
+            for j, (label, zn) in enumerate(zip(row[:4], key)):
+                if parse_name(label) != zn:
+                    mismatches.append(dict(source=path.name, line=i+1, field=j,
+                                           supplied_name=label, numeric_name=format_name(zn), z=zn[0], n=zn[1]))
+            q = numbers(row[-1], 1, f'{path}:{i+1}')[0]
+            for direction, oriented, sign, offset in [
+                ('direct', key, 1, 1), ('reverse', (key[3], key[2], key[1], key[0]), -1, 2)
+            ]:
+                coeff = numbers(lines[i+offset], 7, f'{path}:{i+offset+1}')
+                candidate = Fit(oriented, coeff, direction, path.name, i+1, sign*q, ' '.join(row[:4]))
+                previous = candidates.get(oriented)
+                require(previous is None,
+                        f'{path}:{i+1}: duplicate reaction {oriented}; '
+                        f'previous={previous.source+":"+str(previous.line) if previous else ""}')
+                candidates[oriented] = candidate
+    return candidates, mismatches
+
+
+def reaction_identity(record: RateRecord, nuclides: list[Nuclide]) -> Reaction:
+    slots = []
+    for j, number in enumerate(record.ids[:6]):
+        label = record.header[j*5:j*5+5].strip()
+        if number == 0:
+            require(not label, f'input:{record.line}: name without nuclide index')
+            slots.append(None)
+        else:
+            require(0 < number <= len(nuclides), f'input:{record.line}: nuclide index out of range')
+            zn = nuclides[number-1].zn
+            require(parse_name(label) == zn, f'input:{record.line}: name/index disagree: {label}, {number}')
+            slots.append(zn)
+    rtype = record.section
+    if rtype.startswith('g'):
+        key = slots[0], PARTICLES['g'], slots[1], slots[2]
+        unused = slots[3:]
+    elif rtype.endswith('g'):
+        key = slots[1], slots[0], PARTICLES['g'], slots[2]
+        unused = slots[3:]
     else:
-        line0 = line
-
-        a_fit =     lines_in[i_line + 2].split()[0] \
-            + ' ' + lines_in[i_line + 2].split()[1] \
-            + ' ' + lines_in[i_line + 2].split()[2] \
-            + ' ' + lines_in[i_line + 2].split()[3] \
-            + ' ' + lines_in[i_line + 3].split()[0] \
-            + ' ' + lines_in[i_line + 3].split()[1] \
-            + ' ' + lines_in[i_line + 3].split()[2]
-
-        qv      = lines_in[i_line + 3].split()[3]
-
-        reac_dat.append(['reaclib', lines_in[i_line], lines_in[i_line + 1], \
-                         qv, 0, [a_fit]])
-
-        num_reac += 1
-        i_line += 4
+        key = slots[1], slots[0], slots[2], slots[3]
+        unused = slots[4:]
+    require(all(zn is not None for zn in key) and not any(unused),
+            f'input:{record.line}: wrong reaction multiplicity')
+    require(key[1] == PARTICLES[rtype[0]] and key[2] == PARTICLES[rtype[1]],
+            f'input:{record.line}: particles disagree with section {rtype}')
+    require(tuple(key[0][j]+key[1][j] for j in (0, 1)) ==
+            tuple(key[2][j]+key[3][j] for j in (0, 1)),
+            f'input:{record.line}: Z,N are not conserved')
+    return key
 
 
-header[-1][1] = num_reac
+def selected(record: RateRecord, key: Reaction, all_rates: bool, mode: int) -> bool:
+    if all_rates:  # Retain the original Ra26_all override semantics.
+        return True
+    if record.label not in THEORY_LABELS:
+        return False
+    if mode == 0:
+        return True
+    if mode == 1:
+        return key[0][0] < 47 and key[0][1] < 53
+    return record.section in MODE_CHANNELS[mode]
 
 
-
-###check
-
-if False:
-
-    for j in range(len(reac_dat)):
-        if reac_dat[j][4] > 0 and False:
-            print(reac_dat[j])
-
-        if reac_dat[j][0] == 'iaa' and True:
-            print(reac_dat[j])
-
-print(' ---------- finished ----------' + '\n')
+def render_replacement(record: RateRecord, fit: Fit) -> str:
+    reverse = int(fit.direction == 'reverse')
+    # The textual marker and the solver's integer flag must agree.
+    header = record.header.ljust(45)
+    header = header[:39] + ('v' if reverse else ' ') + ' ra26' + header[45:]
+    ids = record.ids[:7] + (reverse,)
+    eol = '\r\n' if record.raw[0].endswith('\r\n') else '\n'
+    values = fit.coefficients + (record.q,)
+    return (header+eol + ''.join(f'{v:5d}' for v in ids)+eol
+            + ''.join(f'{v:13.5e}' for v in values[:4])+eol
+            + ''.join(f'{v:13.5e}' for v in values[4:])+eol)
 
 
-
-
-if Ra26 and Rate_mod:
-    ### find reaction rates included in Ra26
-
-    ireac = -1  ### counter for reac_dat[]
-
-    for itype in range(len(header)):
-
-        #Reverse = False
-        Mod = True
-        if   header[itype][0] == 'pg':
-            rt_for = ra26_pg.copy()
-            rt_rev = []
-            i_nuc  = 1
-        elif   header[itype][0] == 'gp':
-            rt_for = ra26_pg.copy()
-            rt_rev = ra26_pg.copy()
-            i_nuc  = 0
-        elif header[itype][0] == 'pn':
-            rt_for = ra26_pn.copy()
-            rt_rev = []
-            i_nuc  = 1
-        elif header[itype][0] == 'np':
-            rt_for = ra26_np.copy()
-            rt_rev = []
-            i_nuc  = 1
-        elif header[itype][0] == 'pa':
-            rt_for = ra26_pa.copy()
-            rt_rev = []
-            i_nuc  = 1
-        elif header[itype][0] == 'ap':
-            rt_for = ra26_ap.copy()
-            rt_rev = []
-            i_nuc  = 1
-        elif header[itype][0] == 'ng':
-            rt_for = ra26_ng.copy()
-            rt_rev = []
-            i_nuc  = 1
-        elif header[itype][0] == 'gn':
-            rt_for = ra26_ng.copy()
-            rt_rev = ra26_ng.copy()
-            i_nuc  = 0
-        elif header[itype][0] == 'ag':
-            rt_for = ra26_ag.copy()
-            rt_rev = []
-            i_nuc  = 1
-        elif header[itype][0] == 'ga':
-            rt_for = ra26_ag.copy()
-            rt_rev = ra26_ag.copy()
-            i_nuc  = 0
-        elif header[itype][0] == 'na':
-            rt_for = ra26_na.copy()
-            rt_rev = []
-            i_nuc  = 1
-        elif header[itype][0] == 'an':
-            rt_for = ra26_an.copy()
-            rt_rev = []
-            i_nuc  = 1
+def convert(items, nuclides, fits, *, modify=True, all_rates=False, mode=0):
+    output, log, counts, seen = [], [], collections.defaultdict(collections.Counter), {}
+    mass_by_zn = {n.zn: n.mass_excess for n in nuclides}
+    mass_by_zn[(0, 0)] = 0.0
+    for item in items:
+        if not isinstance(item, RateRecord):
+            output.append(item); continue
+        if not modify or item.iaa or item.section not in CHANNELS:
+            output.extend(item.raw); continue
+        # Validate only the selectable records. Unrelated legacy entries stay intact.
+        if not all_rates and item.label not in THEORY_LABELS:
+            output.extend(item.raw); continue
+        key = reaction_identity(item, nuclides)
+        if not selected(item, key, all_rates, mode):
+            output.extend(item.raw); continue
+        require(key not in seen,
+                f'input:{item.line}: repeated selected reaction, previous line={seen.get(key)}')
+        seen[key] = item.line
+        counts[item.section]['selected'] += 1
+        fit = fits.get(key)
+        event = dict(section=item.section, input_line=item.line,
+                     reaction=' '.join(format_name(zn) for zn in key), old_label=item.label,
+                     status='replaced' if fit else 'kept_no_match',
+                     source=fit.source if fit else '', source_line=fit.line if fit else '',
+                     direction=fit.direction if fit else '', old_indinv=item.ids[7],
+                     new_indinv=int(fit.direction == 'reverse') if fit else item.ids[7],
+                     original_q=item.q, smaragd_q=fit.q if fit else '',
+                     mass_q='',
+                     q_difference=item.q-fit.q if fit else '')
+        event['mass_q'] = sum(mass_by_zn[zn] for zn in key[:2])-sum(mass_by_zn[zn] for zn in key[2:])
+        if fit is None:
+            counts[item.section]['kept_no_match'] += 1
+            output.extend(item.raw)
         else:
-            ireac += header[itype][1]
-            Mod = False
-            print(' - no modify', header[itype][0])
+            counts[item.section][fit.direction] += 1
+            counts[item.section]['flag_changed'] += item.ids[7] != int(fit.direction == 'reverse')
+            output.append(render_replacement(item, fit))
+        log.append(event)
+    return ''.join(output), log, {k: dict(v) for k, v in counts.items()}
 
 
-        if Mod:
-
-            print('     - modifying: ' + header[itype][0])
-
-            for ireac_in in range(header[itype][1]):
-
-                ireac += 1
-
-                if   reac_dat[ireac][0] == 'iaa':
-                    #print('iaa')
-                    continue
-                elif reac_dat[ireac][0] == 'reaclib':
-
-                    if   i_nuc == 0:
-                        nuc0  = reac_dat[ireac][1][0:5].strip()
-                    elif i_nuc == 1:
-                        nuc0  = reac_dat[ireac][1][5:10].strip()
-                    else:
-                        exit('error: i_nuc')
-
-                    nuc0  = nuc0.lower()
-                    label = reac_dat[ireac][1][41:45].strip()
-
-                    Reverse = False
-                    if reac_dat[ireac][1][39:40] == 'v':
-                        Reverse = True
-
-                    Mod_rate = False
-                    if   Ra26_all:
-                        Mod_rate = True
-                    elif label in ('rath', 'ths8', 'thra'):
-                        if   n_selec == 0:
-                            Mod_rate = True
-                        elif n_selec == 1:
-                            nuc_tmp = nd.iso_name(nuc0)
-                            if nuc_tmp[1] < 47 and nuc_tmp[2] < 53:
-                                Mod_rate = True
-                        elif n_selec == 2:
-                            if header[itype][0] in ('pg', 'gp'):
-                                Mod_rate = True
-                        elif n_selec == 3:
-                            if header[itype][0] in ('ap', 'pa', 'ag', 'ga'):
-                                Mod_rate = True
-                        elif n_selec == 4:
-                            if header[itype][0] in ('ng', 'gn', 'np', 'pn'):
-                                Mod_rate = True
-                        else:
-                            print('under construction')
-                            exit()
-
-                    if Mod_rate:
-                        #print(label)
-                        for j in range(len(rt_for)):
-                            if nuc0 == rt_for[j][0]:
-                                reac_dat[ireac][1]\
-                                    = reac_dat[ireac][1][0:41] + 'ra26'
-
-                                if reac_dat[ireac][4] != 0:
-                                    reac_dat[ireac][4] = 0
-                                    reac_dat[ireac][-1] = 'tmp'
-
-                                if Reverse:
-                                    if len(rt_rev) > 1:
-                                        a_tmp = rt_rev[j][3].lstrip()
-                                    else:
-                                        print('####### missing reverse', reac_dat[ireac][1])
-                                else:
-                                    a_tmp = rt_for[j][2].lstrip()
-
-                                a_tmp = ' '.join(a_tmp.split())
-
-                                reac_dat[ireac][-1] = [a_tmp]
-
-                else:
-                    print('error #2')
-                    exit()
+def tsv(rows):
+    out = io.StringIO(newline='')
+    if rows:
+        writer = csv.DictWriter(out, fieldnames=list(rows[0]), delimiter='\t')
+        writer.writeheader(); writer.writerows(rows)
+    return out.getvalue()
 
 
-
-#print(reac_dat[ireac])
-
-
-#exit('in prep.')
-
-
-###### output ##################################################
-
-print(' ----- out new rate data -----')
-
-Out = open('./out/rate.dat', 'w')
-
-ireac = - 1
-
-for itype in range(len(header)):
-    Out.write(' data of  ' + header[itype][0] + ' reactions\n')
-
-
-    for ireac_in in range(header[itype][1]):
-        #print(reac_dat[ireac][0])
-
-        ireac += 1
-
-        if   reac_dat[ireac][0] == 'iaa':
-            Out.write(reac_dat[ireac][1] + '\n')
-            Out.write(reac_dat[ireac][2] + '\n')
-
-            table = reac_dat[ireac][5]
-            table = table.split()
-            for j in range(len(table)):
-                Out.write('{:>11}'.format(table[j]))
-                if j % 8 == 7:
-                    Out.write('\n')
-            Out.write('\n')
-
-        elif reac_dat[ireac][0] == 'reaclib':
-            qv = float(reac_dat[ireac][3])
-            for j in range(1 + reac_dat[ireac][4]):
-                a_fit = reac_dat[ireac][5][j]
-                a_fit = a_fit.split(' ')
-
-                #print(a_fit)
-                Out.write(reac_dat[ireac][1] + '\n')
-                Out.write(reac_dat[ireac][2] + '\n')
-
-                Out.write('{0:13.5e}'.format(float(a_fit[0])))
-                Out.write('{0:13.5e}'.format(float(a_fit[1])))
-                Out.write('{0:13.5e}'.format(float(a_fit[2])))
-                Out.write('{0:13.5e}\n'.format(float(a_fit[3])))
-                Out.write('{0:13.5e}'.format(float(a_fit[4])))
-                Out.write('{0:13.5e}'.format(float(a_fit[5])))
-                Out.write('{0:13.5e}'.format(float(a_fit[6])))
-                Out.write('{0:13.5e}\n'.format(qv))
-
-        else:
-            print('error #1: please check')
-            exit()
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--input-dir', type=Path, default=Path('in'))
+    parser.add_argument('--smaragd-dir', type=Path, default=Path('../../lib_data/ra26'))
+    parser.add_argument('--output-dir', type=Path, default=Path('out'))
+    parser.add_argument('--selection', type=int, choices=range(5), default=n_selec,
+                        help='0:all, 1:Z<47,N<53, 2:pg/gp, 3:ap/pa/ag/ga, 4:ng/gn/np/pn')
+    parser.add_argument('--all-rates', action='store_true', default=Ra26_all,
+                        help='Override theory labels and selection, as original Ra26_all did')
+    parser.add_argument('--no-modify', action='store_true', default=not (Rate_mod and Ra26))
+    parser.add_argument('--force', action='store_true', help='Replace existing generated output files')
+    args = parser.parse_args(argv)
+    try:
+        part_path, rate_path = args.input_dir/'part-v3.z897', args.input_dir/'rate-v3.z897c'
+        nuclides = read_partition(part_path)
+        items = read_rates(rate_path)
+        fits, mismatches = ({}, []) if args.no_modify else read_smaragd(args.smaragd_dir)
+        result, events, counts = convert(items, nuclides, fits, modify=not args.no_modify,
+                                         all_rates=args.all_rates, mode=args.selection)
+        inputs = [part_path, rate_path]
+        if not args.no_modify:
+            inputs += [args.smaragd_dir/f'fits_{p}.dat' for p in ('p', 'n', 'a')]
+        summary = dict(selection=args.selection, all_rates=args.all_rates, modify=not args.no_modify,
+                       converter_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+                       partition_nuclei=len(nuclides), source_name_mismatches=len(mismatches),
+                       selected=len(events), replaced=sum(e['status']=='replaced' for e in events),
+                       kept_no_match=sum(e['status']=='kept_no_match' for e in events),
+                       by_section=counts, q_policy='Preserve input Q; solver recomputes Q from partition masses',
+                       reverse_policy='indinv=1 only for the SMARAGD reverse fit; solver applies PF ratio',
+                       inputs=[dict(path=str(p.resolve()), sha256=hashlib.sha256(p.read_bytes()).hexdigest()) for p in inputs])
+        outputs = {'rate.dat': result, 'net_nz.dat': ''.join(f'{n.zn[1]:5d}{n.zn[0]:5d}{n.a:5d}\n' for n in nuclides),
+                   'replacement_log.tsv': tsv(events), 'source_label_mismatches.tsv': tsv(mismatches),
+                   'summary.json': json.dumps(summary, indent=2)+'\n'}
+        for name in outputs:
+            path = args.output_dir/name
+            require(path.resolve() not in {p.resolve() for p in inputs}, f'Output would overwrite input: {path}')
+            require(args.force or not path.exists(), f'Output exists: {path}; use another directory or --force')
+        args.output_dir.mkdir(parents=True, exist_ok=True)
+        for name, content in outputs.items():
+            (args.output_dir/name).write_bytes(content.encode('ascii'))
+        print(json.dumps(summary, indent=2))
+        return 0
+    except (RateError, OSError, ValueError, IndexError) as exc:
+        print(f'Conversion stopped: {exc}', file=sys.stderr)
+        return 2
 
 
-
-
-Out.write('  end   of data set\n')
-
-
-print(' ---------- finished ----------' + '\n')
-
-
-
-
-
-
-exit()
+if __name__ == '__main__':
+    sys.exit(main())
